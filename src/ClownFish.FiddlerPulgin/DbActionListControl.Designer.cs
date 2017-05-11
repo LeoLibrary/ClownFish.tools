@@ -91,6 +91,7 @@
 			this.textBox1.Size = new System.Drawing.Size(598, 209);
 			this.textBox1.TabIndex = 5;
 			this.textBox1.WordWrap = false;
+			this.textBox1.KeyDown += new System.Windows.Forms.KeyEventHandler(this.textBox1_KeyDown);
 			// 
 			// splitter1
 			// 
