@@ -156,52 +156,100 @@ namespace ClownFish.FiddlerPulgin
 
 		private void listView1_SelectedIndexChanged(object sender, EventArgs e)
 		{
-			if( listView1.SelectedItems.Count < 1 )
-				return;
+		    if (listView1.SelectedItems.Count < 1)
+			return;
 
-			ListViewItem item = listView1.SelectedItems[0];
-			DbActionInfo info = (DbActionInfo)item.Tag;
+		    ListViewItem item = listView1.SelectedItems[0];
+		    DbActionInfo info = (DbActionInfo)item.Tag;
 
-			if( info.SqlText == DbActionInfo.OpenConnectionFlag ) {
-				textBox1.Text = string.Empty;
-				return;
+		    if (info.SqlText == DbActionInfo.OpenConnectionFlag)
+		    {
+			textBox1.Text = string.Empty;
+			return;
+		    }
+
+		    // 在XmlCommand中 \r\n 读取后会变成 \n ，这是XML规范问题，所以只能在这里强制添加 \r，
+		    // http://stackoverflow.com/questions/2004386/how-to-save-newlines-in-xml-attribute
+		    // 如果是用CPQuery拼接出来的SQL，即使包含\r\n，替换后也能正常显示。
+
+		    // 如果希望精确处理XmlCommand，
+		    // 可以在DataLayerEventSubscriber的Instance_AfterExecute，Instance_OnException
+		    // 中判断是不是XmlCommand，继而可以针对地处理。
+		    // 这里简单地处理算了！
+
+		    List<string> nonQuotes = new List<string> { "Int", "DECIMAL(18, 4)" };
+
+		    StringBuilder sb = new StringBuilder();
+
+		    if (info.Parameters != null && info.Parameters.Count > 0)
+		    {
+			sb.AppendLine()
+			    .AppendLine("---------------------------------------------------------------------------------")
+			    .AppendLine("--Parameters:");
+
+			sb.Append("DECLARE ");
+
+			for (int i = 0; i < info.Parameters.Count; i++)
+			{
+			    CommandParameter p = info.Parameters[i];
+			    string dbType = CSharpType2DbType(p.DbType);
+
+			    // 如果不是最后一个则补","号
+			    string quotes = string.Empty;
+			    if (i != info.Parameters.Count - 1)
+			    {
+				quotes = ",";
+			    }
+			    // 判断值是否需要加"''"号
+			    if (nonQuotes.Contains(dbType))
+			    {
+				sb.AppendFormat("{0} {1} = {2}{3}\r\n", p.Name, dbType, p.Value, quotes);
+			    }
+			    else
+			    {
+				sb.AppendFormat("{0} {1} = '{2}'{3}\r\n", p.Name, dbType, p.Value, quotes);
+			    }
 			}
 
-			// 在XmlCommand中 \r\n 读取后会变成 \n ，这是XML规范问题，所以只能在这里强制添加 \r，
-			// http://stackoverflow.com/questions/2004386/how-to-save-newlines-in-xml-attribute
-			// 如果是用CPQuery拼接出来的SQL，即使包含\r\n，替换后也能正常显示。
+			//foreach (CommandParameter p in info.Parameters)
+			//    sb.AppendFormat("  {0} = ({1}) {2}\r\n", p.Name, p.DbType, p.Value);
 
-			// 如果希望精确处理XmlCommand，
-			// 可以在DataLayerEventSubscriber的Instance_AfterExecute，Instance_OnException
-			// 中判断是不是XmlCommand，继而可以针对地处理。
-			// 这里简单地处理算了！
+			sb.AppendLine();
+		    }
 
-			string commandText = info.SqlText.Replace("\n", "\r\n");
-			StringBuilder sb = new StringBuilder(commandText);
-						
-			sb.AppendLine("\r\n");
+		    sb.AppendLine()
+			    .AppendLine("---------------------------------------------------------------------------------")
+			    .AppendLine("--Sql Content:")
+			    .AppendLine();
+
+		    string commandText = info.SqlText.Replace("\n", "\r\n");
+		    sb.Append(commandText);
+		    //StringBuilder sb = new StringBuilder(commandText);
+
+		    sb.AppendLine("\r\n");
 
 
-			if( info.ErrorMsg != null ) {
-				sb.AppendLine()
-					.AppendLine("---------------------------------------------------------------------------------")
-					.AppendLine("Error:")
-					.AppendLine(info.ErrorMsg)
-					.AppendLine();
-			}
+		    if (info.ErrorMsg != null)
+		    {
+			sb.AppendLine()
+			    .AppendLine("---------------------------------------------------------------------------------")
+			    .AppendLine("--Error:")
+			    .AppendLine(info.ErrorMsg)
+			    .AppendLine();
+		    }
 
-			if( info.Parameters != null && info.Parameters.Count > 0 ) {
-				sb.AppendLine()
-					.AppendLine("---------------------------------------------------------------------------------")
-					.AppendLine("Parameters:");
+		    //if( info.Parameters != null && info.Parameters.Count > 0 ) {
+		    //	sb.AppendLine()
+		    //		.AppendLine("---------------------------------------------------------------------------------")
+		    //		.AppendLine("Parameters:");
 
-				foreach( CommandParameter p in info.Parameters )
-					sb.AppendFormat("  {0} = ({1}) {2}\r\n", p.Name, p.DbType, p.Value);
+		    //	foreach( CommandParameter p in info.Parameters )
+		    //		sb.AppendFormat("  {0} = ({1}) {2}\r\n", p.Name, p.DbType, p.Value);
 
-				sb.AppendLine();
-			}
-	
-			textBox1.Text = sb.ToString();
+		    //	sb.AppendLine();
+		    //}
+
+		    textBox1.Text = sb.ToString();
 		}
 
 		public void ClearUI()
@@ -211,6 +259,40 @@ namespace ClownFish.FiddlerPulgin
 			labSumTime.Text = string.Empty;
 		}
 
-		
+		/// <summary>
+		/// C#类型转换为数据库类型
+		/// </summary>
+		/// <param name="csharpType">C#类型</param>
+		/// <returns>数据库类型</returns>
+		private string CSharpType2DbType(string csharpType)
+		{
+		    string dbType;
+		    switch (csharpType)
+		    {
+			case "String":
+			    dbType = "NVARCHAR(MAX)";
+			    break;
+			case "Guid":
+			    dbType = "UNIQUEIDENTIFIER";
+			    break;
+			case "Decimal":
+			    dbType = "DECIMAL(18, 4)";
+			    break;
+			default:
+			    dbType = csharpType;
+			    break;
+		    }
+
+		    return dbType;
+		}
+
+		private void textBox1_KeyDown(object sender, KeyEventArgs e)
+		{
+		    // Ctrl + A 全选文本
+		    if (e.Control && e.KeyCode == Keys.A)
+		    {
+			textBox1.SelectAll();
+		    }
+		}
 	}
 }
